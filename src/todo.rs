@@ -1,9 +1,10 @@
 use chrono::{TimeZone, Utc};
-use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Todo {
-    pub id: usize,
+    pub id: Uuid,
     pub text: String,
     pub done: bool,
     pub created_at: u64,
@@ -11,7 +12,7 @@ pub struct Todo {
 }
 
 impl Todo {
-    pub fn new(id: usize, text: String) -> Todo {
+    pub fn new(id: Uuid, text: String) -> Todo {
         Todo {
             id,
             text,

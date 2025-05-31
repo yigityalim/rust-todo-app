@@ -1,13 +1,14 @@
-mod todo;
-mod storage;
 mod colors;
 mod progress;
+mod storage;
+mod todo;
 
-use todo::{Todo, format_timestamp};
-use storage::{save_todos, load_todos};
+use colored::*;
 use colors::*;
 use progress::*;
-use colored::*;
+use storage::{load_todos, save_todos};
+use todo::{Todo, format_timestamp};
+use uuid::Uuid;
 
 fn main() {
     println!("{}", "\n\n\n📝 TODO CLI UYGULAMASI".cyan().bold());
@@ -30,29 +31,33 @@ fn main() {
         "list" => list_todos(&todos),
         "add" => {
             if let Some(text) = args.get(2) {
-                show_loading("Todo ekleniyor");
-                add_todo(&mut todos, text);
-                should_save = true;
+                if todos.iter().any(|t| t.text == *text) {
+                    error("❌ Bu isimde bir todo zaten var!");
+                } else {
+                    show_loading("Todo ekleniyor");
+                    add_todo(&mut todos, text);
+                    should_save = true;
+                }
             } else {
                 error("❌ Todo eklemek için metin girmeniz gerekiyor!");
             }
         }
         "done" => {
-            if let Some(id_str) = args.get(2) {
-                if mark_todo_done(&mut todos, id_str) {
+            if let Some(name) = args.get(2) {
+                if mark_todo_done(&mut todos, name) {
                     should_save = true;
                 }
             } else {
-                error("❌ Todo ID'sini girmeniz gerekiyor!");
+                error("❌ Todo ismini girmeniz gerekiyor!");
             }
         }
         "remove" => {
-            if let Some(id_str) = args.get(2) {
-                if remove_todo(&mut todos, id_str) {
+            if let Some(name) = args.get(2) {
+                if remove_todo(&mut todos, name) {
                     should_save = true;
                 }
             } else {
-                error("❌ Todo ID'sini girmeniz gerekiyor!");
+                error("❌ Todo ismini girmeniz gerekiyor!");
             }
         }
         "clear" => {
@@ -78,12 +83,12 @@ fn print_help() {
     highlight("\n\n\n📝 TODO CLI UYGULAMASI - YARDIM");
     println!();
     info("🚀 Kullanım:");
-    println!("  cargo run list      - Todo'ları listele");
-    println!("  cargo run add \"..\" - Yeni todo ekle");
-    println!("  cargo run done <id> - Todo'yu tamamla");
-    println!("  cargo run remove <id> - Todo'yu sil");
-    println!("  cargo run clear     - Tamamlananları temizle");
-    println!("  cargo run stats     - İstatistik göster");
+    println!("  cargo run list         - Todo'ları listele");
+    println!("  cargo run add \"..\"   - Yeni todo ekle (benzersiz isim)");
+    println!("  cargo run done <isim>  - Todo'yu tamamla");
+    println!("  cargo run remove <isim> - Todo'yu sil");
+    println!("  cargo run clear        - Tamamlananları temizle");
+    println!("  cargo run stats        - İstatistik göster");
 }
 
 fn show_stats(todos: &[Todo]) {
@@ -98,12 +103,27 @@ fn show_stats(todos: &[Todo]) {
     let completion_rate = (completed as f64 / total as f64) * 100.0;
 
     highlight("📊 TODO İSTATİSTİKLERİ");
-    println!("{} {}", "📝 Toplam:".blue(), total.to_string().yellow().bold());
-    println!("{} {}", "✅ Tamamlanan:".green(), completed.to_string().green().bold());
-    println!("{} {}", "⏳ Bekleyen:".yellow(), pending.to_string().yellow().bold());
-    println!("{} {}%", "📈 Tamamlanma oranı:".cyan(), format!("{:.1}", completion_rate).cyan().bold());
+    println!(
+        "{} {}",
+        "📝 Toplam:".blue(),
+        total.to_string().yellow().bold()
+    );
+    println!(
+        "{} {}",
+        "✅ Tamamlanan:".green(),
+        completed.to_string().green().bold()
+    );
+    println!(
+        "{} {}",
+        "⏳ Bekleyen:".yellow(),
+        pending.to_string().yellow().bold()
+    );
+    println!(
+        "{} {}%",
+        "📈 Tamamlanma oranı:".cyan(),
+        format!("{:.1}", completion_rate).cyan().bold()
+    );
 
-    // Progress bar ile tamamlanma oranını göster
     if completed > 0 {
         show_progress_bar(completed, "Tamamlanan todo'lar");
     }
@@ -115,13 +135,12 @@ fn list_todos(todos: &[Todo]) {
         return;
     }
 
-    highlight("📝 TODO LİSTESİ");
+    highlight("\n📝 TODO LİSTESİ");
     println!("{}", "═══════════════".cyan());
 
     for todo in todos {
         let status = if todo.done { "✅" } else { "⏳" };
         let created_date = format_timestamp(todo.created_at);
-        let id_colored = todo_id(todo.id);
 
         if todo.done {
             let completed_date = todo
@@ -129,72 +148,49 @@ fn list_todos(todos: &[Todo]) {
                 .map(|ts| format_timestamp(ts))
                 .unwrap_or_else(|| "Bilinmiyor".to_string());
 
-            println!(
-                "{} {} {} {}",
-                status,
-                id_colored,
-                todo.text.green().strikethrough(),
-                format!("({})", completed_date).dimmed()
-            );
+            println!("{} {} ", status, todo.text.green().bold().bright_green());
+            todo_done(&format!("{} ({})", todo_id(todo.id), completed_date));
         } else {
-            println!(
-                "{} {} {} {}",
-                status,
-                id_colored,
-                todo.text.white(),
-                format!("({})", created_date).dimmed()
-            );
+            println!("{} {} ", status, todo.text.green().bold());
+            todo_pending(&format!("{} ({})", todo_id(todo.id), created_date));
         }
     }
 }
 
 fn add_todo(todos: &mut Vec<Todo>, text: &str) {
-    let new_id = if todos.is_empty() {
-        0
-    } else {
-        todos.iter().map(|t| t.id).max().unwrap() + 1
-    };
+    if todos.iter().any(|t| t.text == text) {
+        error("❌ Bu isimde bir todo zaten var!");
+        return;
+    }
 
-    todos.push(Todo::new(new_id, text.to_string()));
+    todos.push(Todo::new(Uuid::new_v4(), text.to_string()));
     success(&format!("✅ Yeni todo eklendi: {}", text));
 }
 
-fn mark_todo_done(todos: &mut [Todo], id_str: &str) -> bool {
-    match id_str.parse::<usize>() {
-        Ok(id) => {
-            for todo in todos.iter_mut() {
-                if todo.id == id {
-                    todo.mark_done();
-                    success(&format!("✅ Todo tamamlandı: {}", todo.text));
-                    return true;
-                }
+fn mark_todo_done(todos: &mut [Todo], text: &str) -> bool {
+    for todo in todos.iter_mut() {
+        if todo.text == text {
+            if todo.done {
+                warning("ℹ️ Bu todo zaten tamamlanmış.");
+            } else {
+                todo.mark_done();
+                success(&format!("✅ Todo tamamlandı: {}", todo.text));
             }
-            error(&format!("❌ ID {} bulunamadı!", id));
-            false
-        }
-        Err(_) => {
-            error(&format!("❌ Geçersiz ID: {}", id_str));
-            false
+            return true;
         }
     }
+    error(&format!("❌ Bu isimde bir todo bulunamadı: {}", text));
+    false
 }
 
-fn remove_todo(todos: &mut Vec<Todo>, id_str: &str) -> bool {
-    match id_str.parse::<usize>() {
-        Ok(id) => {
-            if let Some(index) = todos.iter().position(|todo| todo.id == id) {
-                let removed_todo = todos.remove(index);
-                warning(&format!("🗑️ Todo silindi: {}", removed_todo.text));
-                true
-            } else {
-                error(&format!("❌ ID {} bulunamadı!", id));
-                false
-            }
-        }
-        Err(_) => {
-            error(&format!("❌ Geçersiz ID: {}", id_str));
-            false
-        }
+fn remove_todo(todos: &mut Vec<Todo>, text: &str) -> bool {
+    if let Some(index) = todos.iter().position(|todo| todo.text == text) {
+        let removed = todos.remove(index);
+        warning(&format!("🗑️ Todo silindi: {}", removed.text));
+        true
+    } else {
+        error(&format!("❌ Bu isimde bir todo bulunamadı: {}", text));
+        false
     }
 }
 
@@ -210,7 +206,10 @@ fn clear_completed(todos: &mut Vec<Todo>) -> bool {
     let removed_count = initial_count - todos.len();
 
     if removed_count > 0 {
-        success(&format!("🧹 {} tamamlanmış todo temizlendi!", removed_count));
+        success(&format!(
+            "🧹 {} tamamlanmış todo temizlendi!",
+            removed_count
+        ));
         true
     } else {
         info("ℹ️ Hiç tamamlanmış todo bulunamadı.");

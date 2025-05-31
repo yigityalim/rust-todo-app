@@ -29,6 +29,6 @@ pub fn todo_pending(text: &str) {
     println!("{}", text.white());
 }
 
-pub fn todo_id(id: usize) -> String {
-    format!("{}", format!("[{}]", id).magenta().bold())
+pub fn todo_id(id: uuid::Uuid) -> String {
+    format!("{}", format!("[{}]", id).strikethrough().bold())
 }
