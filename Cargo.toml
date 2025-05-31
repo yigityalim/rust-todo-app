@@ -7,3 +7,5 @@ edition = "2024"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 chrono = "0.4.41"
+colored = "3.0.0"
+indicatif = "0.17.11"
